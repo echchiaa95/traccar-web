@@ -4,7 +4,9 @@ import svgr from 'vite-plugin-svgr';
 import { VitePWA } from 'vite-plugin-pwa';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 
-export default defineConfig(() => ({
+export default defineConfig({
+  base: '/traccar-web/',
+}) => ({
   server: {
     port: 3000,
     proxy: {
