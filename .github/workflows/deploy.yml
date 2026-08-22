@@ -1,14 +1,22 @@
-name: Deploy to GitHub Pages
+name: Build and Deploy My Tracker
 
 on:
   push:
     branches:
       - main
+    paths:
+      - "my-tracker.zip"
+      - ".github/workflows/deploy-pages.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
   pages: write
   id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -18,25 +26,80 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Find ZIP file
+        run: |
+          ZIP_FILE=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "No ZIP file found in repository root"
+            exit 1
+          fi
+
+          echo "Using ZIP file: $ZIP_FILE"
+          echo "ZIP_FILE=$ZIP_FILE" >> $GITHUB_ENV
+
+      - name: Extract project
+        run: |
+          rm -rf extracted
+          mkdir extracted
+          unzip "$ZIP_FILE" -d extracted
+
+          echo "Files after extraction:"
+          find extracted -maxdepth 3 -type f | head -50
+
+      - name: Find project directory
+        run: |
+          PROJECT_DIR=$(find extracted -type f -name package.json -exec dirname {} \; | head -n 1)
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "package.json not found inside ZIP"
+            exit 1
+          fi
+
+          echo "Project directory: $PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
+          cache-dependency-path: ${{ env.PROJECT_DIR }}/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: npm install
 
-      - name: Build
+      - name: Build project
+        working-directory: ${{ env.PROJECT_DIR }}
+        env:
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/
         run: npm run build
 
-      - name: Setup Pages
+      - name: Create SPA fallback
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          if [ -f build/index.html ]; then
+            cp build/index.html build/404.html
+          fi
+
+      - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload artifact
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./dist
+          path: ${{ env.PROJECT_DIR }}/build
 
-      - name: Deploy
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4
