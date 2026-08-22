@@ -1,4 +1,4 @@
-name: Build and Deploy My Tracker
+name: Build and Deploy traccar web
 
 on:
   push:
