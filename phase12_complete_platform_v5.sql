@@ -3339,6 +3339,41 @@ $$;
 revoke all on function fn_get_class_schedule(uuid) from public;
 grant execute on function fn_get_class_schedule(uuid) to authenticated;
 
+
+-- 11.3 fn_teacher_classes — classes of the calling teacher (teacher_classes
+--     link or responsible teacher), with year label aliased as year_name.
+create or replace function fn_teacher_classes()
+returns table(class_id uuid, class_name text, level text, year_name text, student_count bigint)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_teacher_id uuid;
+begin
+  select t.id into v_teacher_id from teachers t
+  where t.profile_id = auth.uid() and t.deleted_at is null
+  limit 1;
+  if v_teacher_id is null then
+    return;
+  end if;
+
+  return query
+  select c.id, c.name, c.level, ay.label,
+         (select count(*) from student_enrollments se
+          where se.class_id = c.id and se.status = 'ACTIVE')
+  from classes c
+  join academic_years ay on ay.id = c.academic_year_id
+  where c.teacher_id = v_teacher_id
+    and not c.is_disabled
+  order by ay.is_current desc, c.name;
+end;
+$$;
+
+revoke all on function fn_teacher_classes() from public;
+grant execute on function fn_teacher_classes() to authenticated;
+
 -- ============================================================================
 -- SECTION 12 — STUDENT DETAIL & PARENT PORTAL
 -- ============================================================================
